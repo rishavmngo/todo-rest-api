@@ -4,12 +4,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
+	"strconv"
+
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 	"github.com/rishavmngo/todo-http/todo"
 	"github.com/rishavmngo/todo-http/user"
-	"log"
-	"net/http"
 )
 
 type App struct {
@@ -102,9 +104,68 @@ func (a *App) addTodo(w http.ResponseWriter, r *http.Request) {
 	respondWithJson(w, http.StatusCreated, map[string]uint{"id": todo.ID})
 }
 
+func (a *App) removeTodo(w http.ResponseWriter, r *http.Request) {
+
+	author_id, _ := strconv.Atoi(mux.Vars(r)["author_id"])
+	todo_id, _ := strconv.Atoi(mux.Vars(r)["todo_id"])
+
+	var todo todo.Todo
+
+	todo.AuthorID = uint(author_id)
+	todo.ID = uint(todo_id)
+
+	if err := todo.RemoveTodo(a.DB); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+	}
+
+	respondWithJson(w, http.StatusOK, todo)
+}
+func (a *App) updateTodo(w http.ResponseWriter, r *http.Request) {
+
+	author_id, _ := strconv.Atoi(mux.Vars(r)["author_id"])
+	todo_id, _ := strconv.Atoi(mux.Vars(r)["todo_id"])
+
+	decoder := json.NewDecoder(r.Body)
+	var todo todo.Todo
+	todo.AuthorID = uint(author_id)
+	todo.ID = uint(todo_id)
+
+	if err := decoder.Decode(&todo); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := todo.UpdateTodo(a.DB); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondWithJson(w, http.StatusOK, todo)
+}
+func (a *App) getAllTodosById(w http.ResponseWriter, r *http.Request) {
+	author_id, _ := strconv.Atoi(mux.Vars(r)["author_id"])
+
+	todos, err := todo.GetAllTodos(a.DB, uint(author_id))
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJson(w, http.StatusOK, todos)
+}
+func logMW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%s - %s (%s)", r.Method, r.URL.Path, r.RemoteAddr)
+
+		// compare the return-value to the authMW
+		next.ServeHTTP(w, r)
+	})
+}
 func (a *App) initilizeRouter() {
 	//authentication
+	a.Router.Use(logMW)
 	a.Router.HandleFunc("/register", a.register).Methods("POST")
 	a.Router.HandleFunc("/login", a.login).Methods("POST")
 	a.Router.HandleFunc("/todo/add", a.addTodo).Methods("POST")
+	a.Router.HandleFunc("/todo/delete/{author_id}/{todo_id}", a.removeTodo).Methods("DELETE")
+	a.Router.HandleFunc("/todo/update/{author_id}/{todo_id}", a.updateTodo).Methods("PUT")
+	a.Router.HandleFunc("/todo/getall/{author_id}", a.getAllTodosById).Methods("GET")
 }
