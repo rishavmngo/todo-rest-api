@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
+	"github.com/rishavmngo/todo-http/jwtUtil"
 	"github.com/rishavmngo/todo-http/todo"
 	"github.com/rishavmngo/todo-http/user"
 )
@@ -83,7 +84,8 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJson(w, http.StatusOK, map[string]uint{"id": user.ID})
+	token := jwtutil.GenerateToken(user.ID)
+	respondWithJson(w, http.StatusOK, map[string]string{"token": token})
 }
 
 func (a *App) addTodo(w http.ResponseWriter, r *http.Request) {
@@ -162,10 +164,11 @@ func logMW(next http.Handler) http.Handler {
 func (a *App) initilizeRouter() {
 	//authentication
 	a.Router.Use(logMW)
-	a.Router.HandleFunc("/register", a.register).Methods("POST")
-	a.Router.HandleFunc("/login", a.login).Methods("POST")
-	a.Router.HandleFunc("/todo/add", a.addTodo).Methods("POST")
-	a.Router.HandleFunc("/todo/delete/{author_id}/{todo_id}", a.removeTodo).Methods("DELETE")
-	a.Router.HandleFunc("/todo/update/{author_id}/{todo_id}", a.updateTodo).Methods("PUT")
-	a.Router.HandleFunc("/todo/getall/{author_id}", a.getAllTodosById).Methods("GET")
+	userRoute := a.Router.PathPrefix("/user").Subrouter()
+	userRoute.HandleFunc("/register", a.register).Methods("POST")
+	userRoute.HandleFunc("/login", a.login).Methods("POST")
+	a.Router.HandleFunc("/todo/add", jwtutil.Authenticate(a.addTodo)).Methods("POST")
+	a.Router.HandleFunc("/todo/delete/{author_id}/{todo_id}", jwtutil.Authenticate(a.removeTodo)).Methods("DELETE")
+	a.Router.HandleFunc("/todo/update/{author_id}/{todo_id}", jwtutil.Authenticate(a.updateTodo)).Methods("PUT")
+	a.Router.HandleFunc("/todo/getall/{author_id}", jwtutil.Authenticate(a.getAllTodosById)).Methods("GET")
 }
